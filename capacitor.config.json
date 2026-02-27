@@ -1,0 +1,33 @@
+{
+  "appId": "com.panorama.viewer",
+  "appName": "360全景查看器",
+  "webDir": "www",
+    "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 2000,
+      "launchAutoHide": true,
+      "backgroundColor": "#000000",
+      "androidSplashResourceName": "splash",
+      "androidScaleType": "CENTER_CROP",
+      "showSpinner": false
+    }
+  },
+  "android": {
+    "buildOptions": {
+      "keystorePath": "",
+      "keystoreAlias": ""
+    }
+  },
+  "ios": {
+    "contentInset": "automatic",
+    "configureEdgeToEdge": true,
+    "appendUserAgent": "PanoramaViewer/1.0"
+  },
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true,
+    "allowNavigation": [
+      "*"
+    ]
+  }
+}

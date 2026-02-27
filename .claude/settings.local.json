@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm init:*)",
+      "Bash(npm install)",
+      "Bash(npx cap init \"360全景查看器\" \"com.panorama.viewer\" --web-dir=www)",
+      "Bash(npx cap add:*)",
+      "Bash(npx cap sync:*)",
+      "Bash(npm run serve)",
+      "Bash(timeout 3:*)",
+      "Bash(./gradlew assembleDebug:*)",
+      "Bash(cmd /c gradlew.bat assembleDebug)",
+      "Bash(./gradlew.bat:*)",
+      "Bash(echo:*)",
+      "Bash(where java)",
+      "Bash(git init:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
+    ]
+  }
+}
