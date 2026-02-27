@@ -20,7 +20,11 @@
       "Bash(git remote add:*)",
       "Bash(git push:*)",
       "Bash(git pull:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(npx http-server:*)",
+      "Bash(ping:*)",
+      "Bash(findstr:*)",
+      "Bash(del nul)"
     ]
   }
 }
