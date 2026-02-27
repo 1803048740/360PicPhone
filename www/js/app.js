@@ -35,7 +35,61 @@ class PanoramaViewer {
             basePitch: 0
         };
 
+        // 设置（带默认值）
+        this.settings = this.loadSettings();
+
         this.init();
+    }
+
+    // 默认设置
+    getDefaultSettings() {
+        return {
+            dragSensitivity: 1.0,      // 拖拽灵敏度
+            gyroSensitivity: 1.0,      // 陀螺仪灵敏度
+            smoothness: 50,            // 平滑程度 0-100
+            pitchLimit: 80,            // 垂直视角限制（度）
+            fov: 75,                   // 默认视场角
+            invertDrag: false,         // 反转拖拽
+            invertGyro: false          // 反转陀螺仪
+        };
+    }
+
+    // 从 localStorage 加载设置
+    loadSettings() {
+        try {
+            const saved = localStorage.getItem('panoramaSettings');
+            if (saved) {
+                return { ...this.getDefaultSettings(), ...JSON.parse(saved) };
+            }
+        } catch (e) {
+            console.error('加载设置失败:', e);
+        }
+        return this.getDefaultSettings();
+    }
+
+    // 保存设置到 localStorage
+    saveSettings() {
+        try {
+            localStorage.setItem('panoramaSettings', JSON.stringify(this.settings));
+        } catch (e) {
+            console.error('保存设置失败:', e);
+        }
+    }
+
+    // 重置设置为默认值
+    resetSettings() {
+        this.settings = this.getDefaultSettings();
+        this.saveSettings();
+        this.applySettings();
+        this.updateSettingsUI();
+    }
+
+    // 应用设置
+    applySettings() {
+        // 更新默认 FOV
+        if (this.camera && !this.gyroscopeEnabled) {
+            this.targetViewState.fov = this.settings.fov;
+        }
     }
 
     init() {
@@ -50,11 +104,34 @@ class PanoramaViewer {
         this.btnGyroscope = document.getElementById('btnGyroscope');
         this.btnFullscreen = document.getElementById('btnFullscreen');
         this.btnInfo = document.getElementById('btnInfo');
+        this.btnSettings = document.getElementById('btnSettings');
         this.btnRecalibrate = document.getElementById('btnRecalibrate');
         this.fileInput = document.getElementById('fileInput');
         this.loading = document.getElementById('loading');
         this.infoPanel = document.getElementById('infoPanel');
+        this.settingsPanel = document.getElementById('settingsPanel');
         this.btnCloseInfo = document.getElementById('btnCloseInfo');
+        this.btnCloseSettings = document.getElementById('btnCloseSettings');
+
+        // 设置控件
+        this.inputDragSensitivity = document.getElementById('inputDragSensitivity');
+        this.inputGyroSensitivity = document.getElementById('inputGyroSensitivity');
+        this.inputSmoothness = document.getElementById('inputSmoothness');
+        this.inputPitchLimit = document.getElementById('inputPitchLimit');
+        this.inputFov = document.getElementById('inputFov');
+        this.checkInvertDrag = document.getElementById('checkInvertDrag');
+        this.checkInvertGyro = document.getElementById('checkInvertGyro');
+
+        // 设置值显示
+        this.valDragSensitivity = document.getElementById('valDragSensitivity');
+        this.valGyroSensitivity = document.getElementById('valGyroSensitivity');
+        this.valSmoothness = document.getElementById('valSmoothness');
+        this.valPitchLimit = document.getElementById('valPitchLimit');
+        this.valFov = document.getElementById('valFov');
+
+        // 设置按钮
+        this.btnApplySettings = document.getElementById('btnApplySettings');
+        this.btnResetSettings = document.getElementById('btnResetSettings');
     }
 
     setupEventListeners() {
@@ -64,12 +141,87 @@ class PanoramaViewer {
         this.btnRecalibrate.addEventListener('click', () => this.recalibrateGyroscope());
         this.btnFullscreen.addEventListener('click', () => this.toggleFullscreen());
         this.btnInfo.addEventListener('click', () => this.showInfo());
+        this.btnSettings.addEventListener('click', () => this.showSettings());
         this.btnCloseInfo.addEventListener('click', () => this.hideInfo());
+        this.btnCloseSettings.addEventListener('click', () => this.hideSettings());
         this.infoPanel.addEventListener('click', (e) => {
             if (e.target === this.infoPanel) this.hideInfo();
         });
+        this.settingsPanel.addEventListener('click', (e) => {
+            if (e.target === this.settingsPanel) this.hideSettings();
+        });
+
+        // 设置滑块事件
+        this.inputDragSensitivity.addEventListener('input', (e) => {
+            this.valDragSensitivity.textContent = parseFloat(e.target.value).toFixed(1) + 'x';
+        });
+        this.inputGyroSensitivity.addEventListener('input', (e) => {
+            this.valGyroSensitivity.textContent = parseFloat(e.target.value).toFixed(1) + 'x';
+        });
+        this.inputSmoothness.addEventListener('input', (e) => {
+            this.valSmoothness.textContent = e.target.value + '%';
+        });
+        this.inputPitchLimit.addEventListener('input', (e) => {
+            this.valPitchLimit.textContent = e.target.value + '°';
+        });
+        this.inputFov.addEventListener('input', (e) => {
+            this.valFov.textContent = e.target.value + '°';
+        });
+
+        // 设置按钮事件
+        this.btnApplySettings.addEventListener('click', () => this.applySettingsFromUI());
+        this.btnResetSettings.addEventListener('click', () => {
+            this.resetSettings();
+            this.showToast('设置已重置');
+        });
 
         window.addEventListener('resize', () => this.onWindowResize());
+    }
+
+    // 更新设置 UI 显示当前值
+    updateSettingsUI() {
+        this.inputDragSensitivity.value = this.settings.dragSensitivity;
+        this.valDragSensitivity.textContent = this.settings.dragSensitivity.toFixed(1) + 'x';
+
+        this.inputGyroSensitivity.value = this.settings.gyroSensitivity;
+        this.valGyroSensitivity.textContent = this.settings.gyroSensitivity.toFixed(1) + 'x';
+
+        this.inputSmoothness.value = this.settings.smoothness;
+        this.valSmoothness.textContent = this.settings.smoothness + '%';
+
+        this.inputPitchLimit.value = this.settings.pitchLimit;
+        this.valPitchLimit.textContent = this.settings.pitchLimit + '°';
+
+        this.inputFov.value = this.settings.fov;
+        this.valFov.textContent = this.settings.fov + '°';
+
+        this.checkInvertDrag.checked = this.settings.invertDrag;
+        this.checkInvertGyro.checked = this.settings.invertGyro;
+    }
+
+    // 从 UI 应用设置
+    applySettingsFromUI() {
+        this.settings.dragSensitivity = parseFloat(this.inputDragSensitivity.value);
+        this.settings.gyroSensitivity = parseFloat(this.inputGyroSensitivity.value);
+        this.settings.smoothness = parseInt(this.inputSmoothness.value);
+        this.settings.pitchLimit = parseInt(this.inputPitchLimit.value);
+        this.settings.fov = parseInt(this.inputFov.value);
+        this.settings.invertDrag = this.checkInvertDrag.checked;
+        this.settings.invertGyro = this.checkInvertGyro.checked;
+
+        this.saveSettings();
+        this.applySettings();
+        this.hideSettings();
+        this.showToast('设置已保存');
+    }
+
+    showSettings() {
+        this.updateSettingsUI();
+        this.settingsPanel.classList.remove('hidden');
+    }
+
+    hideSettings() {
+        this.settingsPanel.classList.add('hidden');
     }
 
     initThreeJS() {
@@ -88,7 +240,7 @@ class PanoramaViewer {
 
         // 创建相机（位于球心）
         this.camera = new THREE.PerspectiveCamera(
-            this.viewState.fov,
+            this.settings.fov,
             window.innerWidth / window.innerHeight,
             0.1,
             1000
@@ -127,15 +279,17 @@ class PanoramaViewer {
             const deltaY = y - this.previousTouch.y;
 
             // 灵敏度
-            const sensitivity = 0.003;
+            const sensitivity = 0.003 * this.settings.dragSensitivity;
+            const invert = this.settings.invertDrag ? -1 : 1;
 
             // 向右拖 → yaw增加（向右看）
             // 向下拖 → pitch增加（向下看）
-            this.targetViewState.yaw += deltaX * sensitivity;
-            this.targetViewState.pitch += deltaY * sensitivity;
+            this.targetViewState.yaw += deltaX * sensitivity * invert;
+            this.targetViewState.pitch += deltaY * sensitivity * invert;
 
-            // 限制垂直视角（约 -80° 到 80°）
-            this.targetViewState.pitch = Math.max(-1.4, Math.min(1.4, this.targetViewState.pitch));
+            // 限制垂直视角
+            const maxPitch = this.settings.pitchLimit * (Math.PI / 180);
+            this.targetViewState.pitch = Math.max(-maxPitch, Math.min(maxPitch, this.targetViewState.pitch));
 
             this.previousTouch = { x, y };
         };
@@ -169,7 +323,7 @@ class PanoramaViewer {
 
         // 双指缩放
         let initialPinchDistance = 0;
-        let initialFov = this.viewState.fov;
+        let initialFov = this.settings.fov;
 
         canvas.addEventListener('touchstart', (e) => {
             if (e.touches.length === 2) {
@@ -190,7 +344,7 @@ class PanoramaViewer {
 
                 // 缩放：距离越大，FOV越小
                 const scale = initialPinchDistance / currentDistance;
-                this.targetViewState.fov = Math.max(40, Math.min(100, initialFov * scale));
+                this.targetViewState.fov = Math.max(40, Math.min(120, initialFov * scale));
             }
         }, { passive: false });
 
@@ -198,7 +352,7 @@ class PanoramaViewer {
         canvas.addEventListener('wheel', (e) => {
             e.preventDefault();
             this.targetViewState.fov += e.deltaY * 0.05;
-            this.targetViewState.fov = Math.max(40, Math.min(100, this.targetViewState.fov));
+            this.targetViewState.fov = Math.max(40, Math.min(120, this.targetViewState.fov));
         }, { passive: false });
     }
 
@@ -207,7 +361,7 @@ class PanoramaViewer {
         if (!this.camera) return;
 
         // 平滑插值到目标视角
-        const smoothFactor = this.gyroscopeEnabled ? 0.2 : 0.5;
+        const smoothFactor = this.settings.smoothness / 100;
         this.viewState.yaw += (this.targetViewState.yaw - this.viewState.yaw) * smoothFactor;
         this.viewState.pitch += (this.targetViewState.pitch - this.viewState.pitch) * smoothFactor;
         this.viewState.fov += (this.targetViewState.fov - this.viewState.fov) * 0.3;
@@ -321,8 +475,8 @@ class PanoramaViewer {
     }
 
     resetView() {
-        this.viewState = { yaw: 0, pitch: 0, fov: 75 };
-        this.targetViewState = { yaw: 0, pitch: 0, fov: 75 };
+        this.viewState = { yaw: 0, pitch: 0, fov: this.settings.fov };
+        this.targetViewState = { yaw: 0, pitch: 0, fov: this.settings.fov };
     }
 
     showWelcomeMessage() {
@@ -440,28 +594,27 @@ class PanoramaViewer {
         }
 
         // 计算相对角度变化
-        // alpha: 水平方向（指南针），0-360°
-        // beta: 垂直倾斜，前后倾斜，-180°到180°
-        // gamma: 侧向倾斜，-90°到90°
-
-        // 计算alpha差值（处理360环绕）
         let alphaDelta = alpha - this.gyroCalibration.baseAlpha;
         while (alphaDelta > 180) alphaDelta -= 360;
         while (alphaDelta < -180) alphaDelta += 360;
 
-        // 计算beta差值
         let betaDelta = beta - this.gyroCalibration.baseBeta;
 
+        // 应用灵敏度和反转
+        const sensitivity = this.settings.gyroSensitivity;
+        const invert = this.settings.invertGyro ? -1 : 1;
+
         // 转换为弧度
-        const yawDelta = alphaDelta * (Math.PI / 180);
-        const pitchDelta = betaDelta * (Math.PI / 180);
+        const yawDelta = alphaDelta * (Math.PI / 180) * sensitivity * invert;
+        const pitchDelta = betaDelta * (Math.PI / 180) * sensitivity * invert;
 
         // 应用到基准视角
         this.targetViewState.yaw = this.gyroCalibration.baseYaw + yawDelta;
-        this.targetViewState.pitch = this.gyroCalibration.basePitch - pitchDelta; // 向上抬为负
+        this.targetViewState.pitch = this.gyroCalibration.basePitch - pitchDelta;
 
         // 限制垂直视角
-        this.targetViewState.pitch = Math.max(-1.4, Math.min(1.4, this.targetViewState.pitch));
+        const maxPitch = this.settings.pitchLimit * (Math.PI / 180);
+        this.targetViewState.pitch = Math.max(-maxPitch, Math.min(maxPitch, this.targetViewState.pitch));
     }
 
     recalibrateGyroscope() {

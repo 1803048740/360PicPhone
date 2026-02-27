@@ -40,6 +40,13 @@
                 </svg>
                 全屏
             </button>
+            <button id="btnSettings" class="tool-btn">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                </svg>
+                <span>设置</span>
+            </button>
             <button id="btnInfo" class="tool-btn">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="10"></circle>
@@ -72,6 +79,99 @@
                     <li>启用陀螺仪进行体感控制</li>
                 </ul>
                 <button id="btnCloseInfo" class="btn">关闭</button>
+            </div>
+        </div>
+
+        <!-- 设置面板 -->
+        <div id="settingsPanel" class="settings-panel hidden">
+            <div class="settings-content">
+                <div class="settings-header">
+                    <h3>设置</h3>
+                    <button id="btnCloseSettings" class="close-btn">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                    </button>
+                </div>
+
+                <div class="settings-body">
+                    <!-- 拖拽灵敏度 -->
+                    <div class="setting-item">
+                        <label class="setting-label">
+                            <span>拖拽灵敏度</span>
+                            <span class="setting-value" id="valDragSensitivity">1.0x</span>
+                        </label>
+                        <input type="range" id="inputDragSensitivity" class="setting-slider"
+                               min="0.2" max="3" step="0.1" value="1">
+                    </div>
+
+                    <!-- 陀螺仪灵敏度 -->
+                    <div class="setting-item">
+                        <label class="setting-label">
+                            <span>陀螺仪灵敏度</span>
+                            <span class="setting-value" id="valGyroSensitivity">1.0x</span>
+                        </label>
+                        <input type="range" id="inputGyroSensitivity" class="setting-slider"
+                               min="0.2" max="3" step="0.1" value="1">
+                    </div>
+
+                    <!-- 平滑程度 -->
+                    <div class="setting-item">
+                        <label class="setting-label">
+                            <span>平滑程度</span>
+                            <span class="setting-value" id="valSmoothness">50%</span>
+                        </label>
+                        <input type="range" id="inputSmoothness" class="setting-slider"
+                               min="0" max="100" step="5" value="50">
+                    </div>
+
+                    <!-- 垂直视角限制 -->
+                    <div class="setting-item">
+                        <label class="setting-label">
+                            <span>垂直视角限制</span>
+                            <span class="setting-value" id="valPitchLimit">80°</span>
+                        </label>
+                        <input type="range" id="inputPitchLimit" class="setting-slider"
+                               min="45" max="90" step="5" value="80">
+                    </div>
+
+                    <!-- 视场角范围 -->
+                    <div class="setting-item">
+                        <label class="setting-label">
+                            <span>视场角 (FOV)</span>
+                            <span class="setting-value" id="valFov">75°</span>
+                        </label>
+                        <input type="range" id="inputFov" class="setting-slider"
+                               min="40" max="120" step="5" value="75">
+                    </div>
+
+                    <!-- 反转控制 -->
+                    <div class="setting-item toggle-item">
+                        <label class="setting-label">
+                            <span>反转拖拽方向</span>
+                        </label>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="checkInvertDrag">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+
+                    <div class="setting-item toggle-item">
+                        <label class="setting-label">
+                            <span>反转陀螺仪方向</span>
+                        </label>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="checkInvertGyro">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="settings-footer">
+                    <button id="btnResetSettings" class="btn-secondary">重置默认</button>
+                    <button id="btnApplySettings" class="btn-primary">应用</button>
+                </div>
             </div>
         </div>
     </div>
