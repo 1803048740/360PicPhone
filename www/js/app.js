@@ -1,18 +1,39 @@
 class PanoramaViewer {
     constructor() {
-        this.viewer = null;
         this.scene = null;
         this.camera = null;
         this.renderer = null;
         this.sphere = null;
+        this.texture = null;
+
+        // 统一的视角状态（弧度）
+        this.viewState = {
+            yaw: 0,      // 水平方向，左右看
+            pitch: 0,    // 垂直方向，上下看
+            fov: 75      // 视场角
+        };
+
+        // 目标视角状态（用于平滑过渡）
+        this.targetViewState = {
+            yaw: 0,
+            pitch: 0,
+            fov: 75
+        };
+
+        // 交互状态
         this.isDragging = false;
-        this.previousMousePosition = { x: 0, y: 0 };
+        this.previousTouch = { x: 0, y: 0 };
         this.gyroscopeEnabled = false;
-        this.isLoading = false;
         this.orientationHandler = null;
-        this.initialOrientation = { alpha: 0, beta: 0, gamma: 0 };
-        this.orientationCalibrated = false;
-        this.baseRotation = { x: 0, y: 0, z: 0 };
+
+        // 陀螺仪校准数据
+        this.gyroCalibration = {
+            calibrated: false,
+            baseAlpha: 0,
+            baseBeta: 0,
+            baseYaw: 0,
+            basePitch: 0
+        };
 
         this.init();
     }
@@ -34,14 +55,13 @@ class PanoramaViewer {
         this.loading = document.getElementById('loading');
         this.infoPanel = document.getElementById('infoPanel');
         this.btnCloseInfo = document.getElementById('btnCloseInfo');
-        this.panoramaContainer = document.getElementById('panorama');
     }
 
     setupEventListeners() {
         this.btnOpen.addEventListener('click', () => this.fileInput.click());
         this.fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
         this.btnGyroscope.addEventListener('click', () => this.toggleGyroscope());
-        this.btnRecalibrate.addEventListener('click', () => this.recalibrateOrientation());
+        this.btnRecalibrate.addEventListener('click', () => this.recalibrateGyroscope());
         this.btnFullscreen.addEventListener('click', () => this.toggleFullscreen());
         this.btnInfo.addEventListener('click', () => this.showInfo());
         this.btnCloseInfo.addEventListener('click', () => this.hideInfo());
@@ -49,14 +69,12 @@ class PanoramaViewer {
             if (e.target === this.infoPanel) this.hideInfo();
         });
 
-        // 窗口大小变化
         window.addEventListener('resize', () => this.onWindowResize());
     }
 
     initThreeJS() {
         console.log('初始化 Three.js...');
 
-        // 检查 Three.js 是否加载
         if (typeof THREE === 'undefined') {
             console.error('Three.js 未加载！');
             document.body.innerHTML = '<div style="padding:20px;text-align:center;"><h1>错误</h1><p>Three.js 库加载失败</p></div>';
@@ -68,22 +86,22 @@ class PanoramaViewer {
         // 创建场景
         this.scene = new THREE.Scene();
 
-        // 创建相机
+        // 创建相机（位于球心）
         this.camera = new THREE.PerspectiveCamera(
-            75,
+            this.viewState.fov,
             window.innerWidth / window.innerHeight,
             0.1,
             1000
         );
-        this.camera.position.set(0, 0, 0.1);
+        this.camera.position.set(0, 0, 0);
 
         // 创建渲染器
-        this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        this.renderer = new THREE.WebGLRenderer({ antialias: true });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
-        this.renderer.setPixelRatio(window.devicePixelRatio);
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         container.appendChild(this.renderer.domElement);
 
-        // 鼠标/触摸事件
+        // 设置控制
         this.setupControls();
 
         // 开始渲染循环
@@ -95,73 +113,120 @@ class PanoramaViewer {
     setupControls() {
         const canvas = this.renderer.domElement;
 
-        // 鼠标事件
-        canvas.addEventListener('mousedown', (e) => {
+        // 鼠标/触摸开始
+        const onPointerDown = (x, y) => {
             this.isDragging = true;
-            this.previousMousePosition = { x: e.clientX, y: e.clientY };
-        });
+            this.previousTouch = { x, y };
+        };
 
-        canvas.addEventListener('mousemove', (e) => {
+        // 鼠标/触摸移动 - VR风格：直接改变视角
+        const onPointerMove = (x, y) => {
             if (!this.isDragging) return;
 
-            const deltaX = e.clientX - this.previousMousePosition.x;
-            const deltaY = e.clientY - this.previousMousePosition.y;
+            const deltaX = x - this.previousTouch.x;
+            const deltaY = y - this.previousTouch.y;
 
-            this.camera.rotation.y -= deltaX * 0.005;
-            this.camera.rotation.x += deltaY * 0.005;
+            // 灵敏度
+            const sensitivity = 0.003;
 
-            // 限制垂直视角
-            this.camera.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.camera.rotation.x));
+            // 向右拖 → yaw增加（向右看）
+            // 向下拖 → pitch增加（向下看）
+            this.targetViewState.yaw += deltaX * sensitivity;
+            this.targetViewState.pitch += deltaY * sensitivity;
 
-            this.previousMousePosition = { x: e.clientX, y: e.clientY };
-        });
+            // 限制垂直视角（约 -80° 到 80°）
+            this.targetViewState.pitch = Math.max(-1.4, Math.min(1.4, this.targetViewState.pitch));
 
-        canvas.addEventListener('mouseup', () => {
+            this.previousTouch = { x, y };
+        };
+
+        // 鼠标/触摸结束
+        const onPointerUp = () => {
             this.isDragging = false;
-        });
+        };
 
-        canvas.addEventListener('mouseleave', () => {
-            this.isDragging = false;
-        });
+        // 鼠标事件
+        canvas.addEventListener('mousedown', (e) => onPointerDown(e.clientX, e.clientY));
+        canvas.addEventListener('mousemove', (e) => onPointerMove(e.clientX, e.clientY));
+        canvas.addEventListener('mouseup', onPointerUp);
+        canvas.addEventListener('mouseleave', onPointerUp);
 
         // 触摸事件
         canvas.addEventListener('touchstart', (e) => {
             if (e.touches.length === 1) {
-                this.isDragging = true;
-                this.previousMousePosition = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+                onPointerDown(e.touches[0].clientX, e.touches[0].clientY);
             }
-        });
+        }, { passive: true });
 
         canvas.addEventListener('touchmove', (e) => {
-            if (!this.isDragging || e.touches.length !== 1) return;
-            e.preventDefault();
-
-            const deltaX = e.touches[0].clientX - this.previousMousePosition.x;
-            const deltaY = e.touches[0].clientY - this.previousMousePosition.y;
-
-            this.camera.rotation.y -= deltaX * 0.005;
-            this.camera.rotation.x += deltaY * 0.005;
-
-            this.camera.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.camera.rotation.x));
-
-            this.previousMousePosition = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            if (this.isDragging && e.touches.length === 1) {
+                e.preventDefault();
+                onPointerMove(e.touches[0].clientX, e.touches[0].clientY);
+            }
         }, { passive: false });
 
-        canvas.addEventListener('touchend', () => {
-            this.isDragging = false;
-        });
+        canvas.addEventListener('touchend', onPointerUp);
+
+        // 双指缩放
+        let initialPinchDistance = 0;
+        let initialFov = this.viewState.fov;
+
+        canvas.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 2) {
+                this.isDragging = false;
+                const dx = e.touches[0].clientX - e.touches[1].clientX;
+                const dy = e.touches[0].clientY - e.touches[1].clientY;
+                initialPinchDistance = Math.sqrt(dx * dx + dy * dy);
+                initialFov = this.viewState.fov;
+            }
+        }, { passive: true });
+
+        canvas.addEventListener('touchmove', (e) => {
+            if (e.touches.length === 2) {
+                e.preventDefault();
+                const dx = e.touches[0].clientX - e.touches[1].clientX;
+                const dy = e.touches[0].clientY - e.touches[1].clientY;
+                const currentDistance = Math.sqrt(dx * dx + dy * dy);
+
+                // 缩放：距离越大，FOV越小
+                const scale = initialPinchDistance / currentDistance;
+                this.targetViewState.fov = Math.max(40, Math.min(100, initialFov * scale));
+            }
+        }, { passive: false });
 
         // 滚轮缩放
         canvas.addEventListener('wheel', (e) => {
             e.preventDefault();
-            this.camera.fov += e.deltaY * 0.05;
-            this.camera.fov = Math.max(30, Math.min(100, this.camera.fov));
-            this.camera.updateProjectionMatrix();
+            this.targetViewState.fov += e.deltaY * 0.05;
+            this.targetViewState.fov = Math.max(40, Math.min(100, this.targetViewState.fov));
         }, { passive: false });
+    }
+
+    // 更新相机旋转
+    updateCamera() {
+        if (!this.camera) return;
+
+        // 平滑插值到目标视角
+        const smoothFactor = this.gyroscopeEnabled ? 0.2 : 0.5;
+        this.viewState.yaw += (this.targetViewState.yaw - this.viewState.yaw) * smoothFactor;
+        this.viewState.pitch += (this.targetViewState.pitch - this.viewState.pitch) * smoothFactor;
+        this.viewState.fov += (this.targetViewState.fov - this.viewState.fov) * 0.3;
+
+        // 应用到相机
+        this.camera.fov = this.viewState.fov;
+        this.camera.updateProjectionMatrix();
+
+        // 设置相机旋转（使用欧拉角，YXZ顺序避免万向节锁）
+        this.camera.rotation.order = 'YXZ';
+        this.camera.rotation.y = this.viewState.yaw;
+        this.camera.rotation.x = this.viewState.pitch;
+        this.camera.rotation.z = 0;
     }
 
     animate() {
         requestAnimationFrame(() => this.animate());
+
+        this.updateCamera();
 
         if (this.renderer && this.scene && this.camera) {
             this.renderer.render(this.scene, this.camera);
@@ -177,14 +242,12 @@ class PanoramaViewer {
     }
 
     showLoading() {
-        this.isLoading = true;
         if (this.loading) {
             this.loading.classList.remove('hidden');
         }
     }
 
     hideLoading() {
-        this.isLoading = false;
         if (this.loading) {
             this.loading.classList.add('hidden');
         }
@@ -232,7 +295,10 @@ class PanoramaViewer {
             this.sphere.material.dispose();
         }
 
-        // 设置纹理颜色空间
+        // 保存纹理引用
+        this.texture = texture;
+
+        // 设置纹理参数
         texture.colorSpace = THREE.SRGBColorSpace;
         texture.minFilter = THREE.LinearFilter;
         texture.magFilter = THREE.LinearFilter;
@@ -242,18 +308,21 @@ class PanoramaViewer {
         geometry.scale(-1, 1, 1); // 翻转球体，使纹理显示在内部
 
         // 创建材质
-        const material = new THREE.MeshBasicMaterial({
-            map: texture
-        });
+        const material = new THREE.MeshBasicMaterial({ map: texture });
 
         // 创建网格
         this.sphere = new THREE.Mesh(geometry, material);
         this.scene.add(this.sphere);
 
-        // 重置相机位置
-        this.camera.rotation.set(0, 0, 0);
+        // 重置视角
+        this.resetView();
 
         console.log('全景图创建完成');
+    }
+
+    resetView() {
+        this.viewState = { yaw: 0, pitch: 0, fov: 75 };
+        this.targetViewState = { yaw: 0, pitch: 0, fov: 75 };
     }
 
     showWelcomeMessage() {
@@ -292,8 +361,6 @@ class PanoramaViewer {
         const file = event.target.files[0];
         if (!file) return;
 
-        console.log('选择的文件:', file.name, file.type, file.size);
-
         if (!file.type.startsWith('image/')) {
             alert('请选择图片文件');
             return;
@@ -301,15 +368,15 @@ class PanoramaViewer {
 
         const reader = new FileReader();
         reader.onload = (e) => {
-            console.log('文件读取完成');
             this.loadPanorama(e.target.result);
         };
-        reader.onerror = (error) => {
-            console.error('文件读取失败:', error);
+        reader.onerror = () => {
             alert('文件读取失败');
         };
         reader.readAsDataURL(file);
     }
+
+    // ========== 陀螺仪控制 ==========
 
     async toggleGyroscope() {
         if (this.gyroscopeEnabled) {
@@ -317,6 +384,7 @@ class PanoramaViewer {
             return;
         }
 
+        // 请求权限（iOS 13+）
         if (typeof DeviceOrientationEvent !== 'undefined' &&
             typeof DeviceOrientationEvent.requestPermission === 'function') {
             try {
@@ -328,6 +396,7 @@ class PanoramaViewer {
                 }
             } catch (error) {
                 console.error('请求陀螺仪权限失败:', error);
+                alert('请求权限失败');
             }
         } else if ('DeviceOrientationEvent' in window) {
             this.enableGyroscope();
@@ -337,104 +406,74 @@ class PanoramaViewer {
     }
 
     enableGyroscope() {
-        // 保存当前相机旋转作为基准
-        if (this.camera) {
-            this.baseRotation = {
-                x: this.camera.rotation.x,
-                y: this.camera.rotation.y,
-                z: this.camera.rotation.z
-            };
-        }
+        // 保存当前视角作为基准
+        this.gyroCalibration.baseYaw = this.viewState.yaw;
+        this.gyroCalibration.basePitch = this.viewState.pitch;
+        this.gyroCalibration.calibrated = false;
 
-        // 等待第一次方向数据进行校准
-        this.orientationCalibrated = false;
         this.gyroscopeEnabled = true;
         this.btnGyroscope.classList.add('active');
         this.btnGyroscope.querySelector('span').textContent = '关闭';
-
-        // 显示校准按钮
         this.btnRecalibrate.classList.remove('hidden');
 
-        // 创建处理函数引用
+        // 绑定方向事件
         this.orientationHandler = this.handleOrientation.bind(this);
         window.addEventListener('deviceorientation', this.orientationHandler);
 
-        this.showToast('陀螺仪已启用，将当前方向设为正前方');
+        this.showToast('陀螺仪已启用');
     }
 
     handleOrientation(event) {
-        if (!this.gyroscopeEnabled || !this.camera) return;
+        if (!this.gyroscopeEnabled) return;
 
         const { alpha, beta, gamma } = event;
 
-        // 等待有效的方向数据
+        // 等待有效数据
         if (alpha === null || beta === null) return;
 
-        // 首次校准 - 将当前方向设为正前方
-        if (!this.orientationCalibrated) {
-            this.initialOrientation = { alpha, beta, gamma: gamma || 0 };
-            this.orientationCalibrated = true;
-            console.log('陀螺仪已校准，正前方:', this.initialOrientation);
+        // 首次校准
+        if (!this.gyroCalibration.calibrated) {
+            this.gyroCalibration.baseAlpha = alpha;
+            this.gyroCalibration.baseBeta = beta;
+            this.gyroCalibration.calibrated = true;
+            console.log('陀螺仪已校准:', { alpha, beta, gamma });
         }
 
         // 计算相对角度变化
-        // alpha: 水平旋转（指南针方向），向左转为正
-        // beta: 垂直倾斜，手机向上抬为负，向下倾斜为正
+        // alpha: 水平方向（指南针），0-360°
+        // beta: 垂直倾斜，前后倾斜，-180°到180°
+        // gamma: 侧向倾斜，-90°到90°
 
-        // 水平方向：计算 alpha 的差值（处理 360° 环绕）
-        let alphaDelta = alpha - this.initialOrientation.alpha;
-        // 规范化到 -180° 到 180°
+        // 计算alpha差值（处理360环绕）
+        let alphaDelta = alpha - this.gyroCalibration.baseAlpha;
         while (alphaDelta > 180) alphaDelta -= 360;
         while (alphaDelta < -180) alphaDelta += 360;
 
-        // 垂直方向：计算 beta 的差值
-        const betaDelta = beta - this.initialOrientation.beta;
+        // 计算beta差值
+        let betaDelta = beta - this.gyroCalibration.baseBeta;
 
-        // 应用到基准旋转
-        // yaw（左右）：向左转 alpha 增加，相机向左看（正旋转）
-        const targetYaw = this.baseRotation.y + alphaDelta * (Math.PI / 180);
+        // 转换为弧度
+        const yawDelta = alphaDelta * (Math.PI / 180);
+        const pitchDelta = betaDelta * (Math.PI / 180);
 
-        // pitch（上下）：向上抬 beta 减小，相机向上看（负旋转）
-        let targetPitch = this.baseRotation.x + (-betaDelta) * (Math.PI / 180);
-        // 限制垂直角度范围（约 -70° 到 70°）
-        targetPitch = Math.max(-1.2, Math.min(1.2, targetPitch));
+        // 应用到基准视角
+        this.targetViewState.yaw = this.gyroCalibration.baseYaw + yawDelta;
+        this.targetViewState.pitch = this.gyroCalibration.basePitch - pitchDelta; // 向上抬为负
 
-        // 平滑过渡
-        const smoothFactor = 0.15;
-        this.camera.rotation.y += (targetYaw - this.camera.rotation.y) * smoothFactor;
-        this.camera.rotation.x += (targetPitch - this.camera.rotation.x) * smoothFactor;
+        // 限制垂直视角
+        this.targetViewState.pitch = Math.max(-1.4, Math.min(1.4, this.targetViewState.pitch));
     }
 
-    calibrateOrientationWithValues(alpha, beta, gamma) {
-        // 此方法已不再需要，校准逻辑已移入 handleOrientation
-        this.initialOrientation = { alpha, beta, gamma };
-        this.orientationCalibrated = true;
+    recalibrateGyroscope() {
+        // 重置校准
+        this.gyroCalibration.calibrated = false;
 
-        if (this.camera) {
-            this.baseRotation = {
-                x: this.camera.rotation.x,
-                y: this.camera.rotation.y,
-                z: this.camera.rotation.z
-            };
-        }
-        console.log('陀螺仪已校准:', this.initialOrientation);
-    }
+        // 重置视角到中心
+        this.resetView();
 
-    recalibrateOrientation() {
-        // 重置校准状态
-        this.orientationCalibrated = false;
-
-        // 将视角重置到中心
-        if (this.camera) {
-            this.camera.rotation.set(0, 0, 0);
-            this.baseRotation = { x: 0, y: 0, z: 0 };
-        }
-
-        // 重置相机 FOV
-        if (this.camera) {
-            this.camera.fov = 75;
-            this.camera.updateProjectionMatrix();
-        }
+        // 更新基准视角
+        this.gyroCalibration.baseYaw = 0;
+        this.gyroCalibration.basePitch = 0;
 
         this.showToast('视角已重置');
     }
@@ -450,19 +489,18 @@ class PanoramaViewer {
             this.orientationHandler = null;
         }
 
-        this.orientationCalibrated = false;
+        this.gyroCalibration.calibrated = false;
     }
 
     showToast(message) {
-        // 创建临时提示
         const toast = document.createElement('div');
         toast.className = 'toast';
         toast.textContent = message;
         document.body.appendChild(toast);
 
-        setTimeout(() => {
+        requestAnimationFrame(() => {
             toast.classList.add('show');
-        }, 10);
+        });
 
         setTimeout(() => {
             toast.classList.remove('show');
@@ -493,7 +531,6 @@ class PanoramaViewer {
 document.addEventListener('DOMContentLoaded', () => {
     console.log('DOM 加载完成，初始化应用...');
 
-    // 检查 Three.js 是否加载
     if (typeof THREE === 'undefined') {
         console.error('Three.js 库未加载！');
         document.body.innerHTML = '<div style="padding:20px;text-align:center;"><h1>错误</h1><p>Three.js 库加载失败</p></div>';
@@ -501,7 +538,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     console.log('Three.js 库已加载');
-
     window.app = new PanoramaViewer();
 
     // 防止 iOS Safari 弹性滚动
