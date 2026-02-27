@@ -346,7 +346,7 @@ class PanoramaViewer {
             };
         }
 
-        // 重置校准状态
+        // 等待第一次方向数据进行校准
         this.orientationCalibrated = false;
         this.gyroscopeEnabled = true;
         this.btnGyroscope.classList.add('active');
@@ -359,7 +359,7 @@ class PanoramaViewer {
         this.orientationHandler = this.handleOrientation.bind(this);
         window.addEventListener('deviceorientation', this.orientationHandler);
 
-        this.showToast('陀螺仪已启用，请保持设备平稳');
+        this.showToast('陀螺仪已启用，将当前方向设为正前方');
     }
 
     handleOrientation(event) {
@@ -367,35 +367,49 @@ class PanoramaViewer {
 
         const { alpha, beta, gamma } = event;
 
-        // 首次校准
-        if (!this.orientationCalibrated && alpha !== null && beta !== null && gamma !== null) {
-            this.calibrateOrientationWithValues(alpha, beta, gamma);
+        // 等待有效的方向数据
+        if (alpha === null || beta === null) return;
+
+        // 首次校准 - 将当前方向设为正前方
+        if (!this.orientationCalibrated) {
+            this.initialOrientation = { alpha, beta, gamma: gamma || 0 };
+            this.orientationCalibrated = true;
+            console.log('陀螺仪已校准，正前方:', this.initialOrientation);
         }
 
-        if (alpha !== null && beta !== null) {
-            // 计算相对角度（相对于初始校准位置）
-            const alphaDelta = (alpha - this.initialOrientation.alpha + 360) % 360;
-            const betaDelta = beta - this.initialOrientation.beta;
+        // 计算相对角度变化
+        // alpha: 水平旋转（指南针方向），向左转为正
+        // beta: 垂直倾斜，手机向上抬为负，向下倾斜为正
 
-            // 水平方向：使用 alpha，转换为弧度
-            const targetYaw = this.baseRotation.y + alphaDelta * (Math.PI / 180);
+        // 水平方向：计算 alpha 的差值（处理 360° 环绕）
+        let alphaDelta = alpha - this.initialOrientation.alpha;
+        // 规范化到 -180° 到 180°
+        while (alphaDelta > 180) alphaDelta -= 360;
+        while (alphaDelta < -180) alphaDelta += 360;
 
-            // 垂直方向：使用 beta，限制在合理范围内
-            let targetPitch = this.baseRotation.x - betaDelta * (Math.PI / 180) * 1.2;
-            targetPitch = Math.max(-Math.PI / 2.5, Math.min(Math.PI / 2.5, targetPitch));
+        // 垂直方向：计算 beta 的差值
+        const betaDelta = beta - this.initialOrientation.beta;
 
-            // 平滑过渡
-            const smoothFactor = 0.1;
-            this.camera.rotation.y += (targetYaw - this.camera.rotation.y) * smoothFactor;
-            this.camera.rotation.x += (targetPitch - this.camera.rotation.x) * smoothFactor;
-        }
+        // 应用到基准旋转
+        // yaw（左右）：向左转 alpha 增加，相机向左看（正旋转）
+        const targetYaw = this.baseRotation.y + alphaDelta * (Math.PI / 180);
+
+        // pitch（上下）：向上抬 beta 减小，相机向上看（负旋转）
+        let targetPitch = this.baseRotation.x + (-betaDelta) * (Math.PI / 180);
+        // 限制垂直角度范围（约 -70° 到 70°）
+        targetPitch = Math.max(-1.2, Math.min(1.2, targetPitch));
+
+        // 平滑过渡
+        const smoothFactor = 0.15;
+        this.camera.rotation.y += (targetYaw - this.camera.rotation.y) * smoothFactor;
+        this.camera.rotation.x += (targetPitch - this.camera.rotation.x) * smoothFactor;
     }
 
     calibrateOrientationWithValues(alpha, beta, gamma) {
+        // 此方法已不再需要，校准逻辑已移入 handleOrientation
         this.initialOrientation = { alpha, beta, gamma };
         this.orientationCalibrated = true;
 
-        // 更新基准旋转为当前值
         if (this.camera) {
             this.baseRotation = {
                 x: this.camera.rotation.x,
