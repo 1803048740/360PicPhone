@@ -9,6 +9,10 @@ class PanoramaViewer {
         this.previousMousePosition = { x: 0, y: 0 };
         this.gyroscopeEnabled = false;
         this.isLoading = false;
+        this.orientationHandler = null;
+        this.initialOrientation = { alpha: 0, beta: 0, gamma: 0 };
+        this.orientationCalibrated = false;
+        this.baseRotation = { x: 0, y: 0, z: 0 };
 
         this.init();
     }
@@ -25,6 +29,7 @@ class PanoramaViewer {
         this.btnGyroscope = document.getElementById('btnGyroscope');
         this.btnFullscreen = document.getElementById('btnFullscreen');
         this.btnInfo = document.getElementById('btnInfo');
+        this.btnRecalibrate = document.getElementById('btnRecalibrate');
         this.fileInput = document.getElementById('fileInput');
         this.loading = document.getElementById('loading');
         this.infoPanel = document.getElementById('infoPanel');
@@ -36,6 +41,7 @@ class PanoramaViewer {
         this.btnOpen.addEventListener('click', () => this.fileInput.click());
         this.fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
         this.btnGyroscope.addEventListener('click', () => this.toggleGyroscope());
+        this.btnRecalibrate.addEventListener('click', () => this.recalibrateOrientation());
         this.btnFullscreen.addEventListener('click', () => this.toggleFullscreen());
         this.btnInfo.addEventListener('click', () => this.showInfo());
         this.btnCloseInfo.addEventListener('click', () => this.hideInfo());
@@ -306,6 +312,11 @@ class PanoramaViewer {
     }
 
     async toggleGyroscope() {
+        if (this.gyroscopeEnabled) {
+            this.disableGyroscope();
+            return;
+        }
+
         if (typeof DeviceOrientationEvent !== 'undefined' &&
             typeof DeviceOrientationEvent.requestPermission === 'function') {
             try {
@@ -326,28 +337,123 @@ class PanoramaViewer {
     }
 
     enableGyroscope() {
+        // 保存当前相机旋转作为基准
+        if (this.camera) {
+            this.baseRotation = {
+                x: this.camera.rotation.x,
+                y: this.camera.rotation.y,
+                z: this.camera.rotation.z
+            };
+        }
+
+        // 重置校准状态
+        this.orientationCalibrated = false;
         this.gyroscopeEnabled = true;
         this.btnGyroscope.classList.add('active');
+        this.btnGyroscope.querySelector('span').textContent = '关闭';
 
-        window.addEventListener('deviceorientation', (event) => {
-            if (!this.gyroscopeEnabled || !this.camera) return;
+        // 显示校准按钮
+        this.btnRecalibrate.classList.remove('hidden');
 
-            const { alpha, beta, gamma } = event;
+        // 创建处理函数引用
+        this.orientationHandler = this.handleOrientation.bind(this);
+        window.addEventListener('deviceorientation', this.orientationHandler);
 
-            if (alpha !== null && beta !== null) {
-                // alpha 是绕 Z 轴旋转 (指南针方向)
-                // beta 是绕 X 轴旋转 (前后倾斜)
-                this.camera.rotation.y = alpha * (Math.PI / 180);
-                this.camera.rotation.x = -beta * (Math.PI / 180);
-            }
-        });
+        this.showToast('陀螺仪已启用，请保持设备平稳');
+    }
 
-        alert('陀螺仪已启用');
+    handleOrientation(event) {
+        if (!this.gyroscopeEnabled || !this.camera) return;
+
+        const { alpha, beta, gamma } = event;
+
+        // 首次校准
+        if (!this.orientationCalibrated && alpha !== null && beta !== null && gamma !== null) {
+            this.calibrateOrientationWithValues(alpha, beta, gamma);
+        }
+
+        if (alpha !== null && beta !== null) {
+            // 计算相对角度（相对于初始校准位置）
+            const alphaDelta = (alpha - this.initialOrientation.alpha + 360) % 360;
+            const betaDelta = beta - this.initialOrientation.beta;
+
+            // 水平方向：使用 alpha，转换为弧度
+            const targetYaw = this.baseRotation.y + alphaDelta * (Math.PI / 180);
+
+            // 垂直方向：使用 beta，限制在合理范围内
+            let targetPitch = this.baseRotation.x - betaDelta * (Math.PI / 180) * 1.2;
+            targetPitch = Math.max(-Math.PI / 2.5, Math.min(Math.PI / 2.5, targetPitch));
+
+            // 平滑过渡
+            const smoothFactor = 0.1;
+            this.camera.rotation.y += (targetYaw - this.camera.rotation.y) * smoothFactor;
+            this.camera.rotation.x += (targetPitch - this.camera.rotation.x) * smoothFactor;
+        }
+    }
+
+    calibrateOrientationWithValues(alpha, beta, gamma) {
+        this.initialOrientation = { alpha, beta, gamma };
+        this.orientationCalibrated = true;
+
+        // 更新基准旋转为当前值
+        if (this.camera) {
+            this.baseRotation = {
+                x: this.camera.rotation.x,
+                y: this.camera.rotation.y,
+                z: this.camera.rotation.z
+            };
+        }
+        console.log('陀螺仪已校准:', this.initialOrientation);
+    }
+
+    recalibrateOrientation() {
+        // 重置校准状态
+        this.orientationCalibrated = false;
+
+        // 将视角重置到中心
+        if (this.camera) {
+            this.camera.rotation.set(0, 0, 0);
+            this.baseRotation = { x: 0, y: 0, z: 0 };
+        }
+
+        // 重置相机 FOV
+        if (this.camera) {
+            this.camera.fov = 75;
+            this.camera.updateProjectionMatrix();
+        }
+
+        this.showToast('视角已重置');
     }
 
     disableGyroscope() {
         this.gyroscopeEnabled = false;
         this.btnGyroscope.classList.remove('active');
+        this.btnGyroscope.querySelector('span').textContent = '陀螺仪';
+        this.btnRecalibrate.classList.add('hidden');
+
+        if (this.orientationHandler) {
+            window.removeEventListener('deviceorientation', this.orientationHandler);
+            this.orientationHandler = null;
+        }
+
+        this.orientationCalibrated = false;
+    }
+
+    showToast(message) {
+        // 创建临时提示
+        const toast = document.createElement('div');
+        toast.className = 'toast';
+        toast.textContent = message;
+        document.body.appendChild(toast);
+
+        setTimeout(() => {
+            toast.classList.add('show');
+        }, 10);
+
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => toast.remove(), 300);
+        }, 2000);
     }
 
     toggleFullscreen() {

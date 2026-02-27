@@ -204,3 +204,45 @@ html, body {
         display: none;
     }
 }
+
+/* Toast 提示 */
+.toast {
+    position: fixed;
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(10px);
+    color: #fff;
+    padding: 12px 24px;
+    border-radius: 24px;
+    font-size: 14px;
+    z-index: 3000;
+    opacity: 0;
+    transition: opacity 0.3s, transform 0.3s;
+    pointer-events: none;
+}
+
+.toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+/* 校准按钮特殊样式 */
+#btnRecalibrate {
+    background: rgba(34, 197, 94, 0.3);
+}
+
+#btnRecalibrate:hover, #btnRecalibrate:active {
+    background: rgba(34, 197, 94, 0.5);
+}
+
+/* 陀螺仪激活状态 */
+#btnGyroscope.active {
+    background: rgba(59, 130, 246, 0.6);
+}
+
+/* 隐藏类 */
+.hidden {
+    display: none !important;
+}
