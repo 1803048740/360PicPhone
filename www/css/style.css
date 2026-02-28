@@ -242,6 +242,15 @@ html, body {
     background: rgba(59, 130, 246, 0.6);
 }
 
+/* 添加更多图片按钮 */
+#btnAddMore {
+    background: rgba(34, 197, 94, 0.3);
+}
+
+#btnAddMore:active {
+    background: rgba(34, 197, 94, 0.5);
+}
+
 /* 隐藏类 */
 .hidden {
     display: none !important;

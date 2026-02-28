@@ -109,6 +109,7 @@ class PanoramaViewer {
 
     setupElements() {
         this.btnOpen = document.getElementById('btnOpen');
+        this.btnAddMore = document.getElementById('btnAddMore');
         this.btnGyroscope = document.getElementById('btnGyroscope');
         this.btnFullscreen = document.getElementById('btnFullscreen');
         this.btnInfo = document.getElementById('btnInfo');
@@ -149,7 +150,8 @@ class PanoramaViewer {
     }
 
     setupEventListeners() {
-        this.btnOpen.addEventListener('click', () => this.fileInput.click());
+        this.btnOpen.addEventListener('click', () => this.openNewImages());
+        this.btnAddMore.addEventListener('click', () => this.addMoreImages());
         this.fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
         this.btnGyroscope.addEventListener('click', () => this.toggleGyroscope());
         this.btnRecalibrate.addEventListener('click', () => this.recalibrateGyroscope());
@@ -450,10 +452,25 @@ class PanoramaViewer {
 
     // ========== 图片导航功能 ==========
 
-    // 处理文件选择（支持多选）
+    // 打开新图片（替换当前列表）
+    openNewImages() {
+        this.isAddingMore = false;
+        this.fileInput.click();
+    }
+
+    // 添加更多图片（追加到当前列表）
+    addMoreImages() {
+        this.isAddingMore = true;
+        this.fileInput.click();
+    }
+
+    // 处理文件选择（支持多选和追加）
     handleFileSelect(event) {
         const files = Array.from(event.target.files);
         if (files.length === 0) return;
+
+        // 重置 file input，确保下次可以选择相同文件
+        this.fileInput.value = '';
 
         // 验证文件类型
         const validFiles = files.filter(f => f.type.startsWith('image/'));
@@ -462,36 +479,102 @@ class PanoramaViewer {
             return;
         }
 
-        // 读取所有图片
+        if (this.isAddingMore) {
+            // 追加模式：添加到现有列表
+            this.appendImages(validFiles);
+        } else {
+            // 替换模式：清空并重新加载
+            this.loadNewImages(validFiles);
+        }
+    }
+
+    // 加载新图片（替换模式）
+    loadNewImages(files) {
         this.images = [];
         let loadedCount = 0;
 
-        validFiles.forEach((file, index) => {
+        files.forEach((file, index) => {
             const reader = new FileReader();
             reader.onload = (e) => {
                 this.images[index] = e.target.result;
                 loadedCount++;
 
                 // 所有图片加载完成后，显示第一张
-                if (loadedCount === validFiles.length) {
+                if (loadedCount === files.length) {
                     this.currentImageIndex = 0;
                     this.loadImageByIndex(0);
                     this.updateImageNav();
+                    this.updateToolbarButtons();
                 }
             };
             reader.onerror = () => {
                 console.error('文件读取失败:', file.name);
                 loadedCount++;
-                if (loadedCount === validFiles.length) {
+                if (loadedCount === files.length) {
                     if (this.images.length > 0) {
                         this.currentImageIndex = 0;
                         this.loadImageByIndex(0);
                         this.updateImageNav();
+                        this.updateToolbarButtons();
                     }
                 }
             };
             reader.readAsDataURL(file);
         });
+    }
+
+    // 追加图片到现有列表
+    appendImages(files) {
+        const startIndex = this.images.length;
+        let loadedCount = 0;
+        const totalFiles = files.length;
+
+        this.showLoading();
+
+        files.forEach((file, index) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                this.images[startIndex + index] = e.target.result;
+                loadedCount++;
+
+                // 所有图片加载完成
+                if (loadedCount === totalFiles) {
+                    this.hideLoading();
+                    this.updateImageNav();
+                    this.updateToolbarButtons();
+
+                    // 如果之前没有图片，显示第一张
+                    if (startIndex === 0) {
+                        this.currentImageIndex = 0;
+                        this.loadImageByIndex(0);
+                    }
+
+                    this.showToast(`已添加 ${totalFiles} 张图片`);
+                }
+            };
+            reader.onerror = () => {
+                console.error('文件读取失败:', file.name);
+                loadedCount++;
+                if (loadedCount === totalFiles) {
+                    this.hideLoading();
+                    this.updateImageNav();
+                    this.updateToolbarButtons();
+                    this.showToast(`添加了 ${this.images.length - startIndex} 张图片`);
+                }
+            };
+            reader.readAsDataURL(file);
+        });
+    }
+
+    // 更新工具栏按钮状态
+    updateToolbarButtons() {
+        if (this.images.length > 0) {
+            this.btnAddMore.classList.remove('hidden');
+            this.btnOpen.classList.add('hidden');
+        } else {
+            this.btnAddMore.classList.add('hidden');
+            this.btnOpen.classList.remove('hidden');
+        }
     }
 
     // 按索引加载图片
@@ -539,6 +622,9 @@ class PanoramaViewer {
         } else {
             this.imageNav.classList.add('hidden');
         }
+
+        // 更新工具栏按钮
+        this.updateToolbarButtons();
     }
 
     // ========== 全景图加载 ==========
@@ -637,8 +723,8 @@ class PanoramaViewer {
         welcomeMsg.innerHTML = `
             <div style="font-size: 48px; margin-bottom: 15px;">🌐</div>
             <h2 style="margin: 0 0 15px 0;">360° 全景查看器</h2>
-            <p style="color: #ccc; margin-bottom: 20px;">点击"打开图片"加载全景图</p>
-            <p style="font-size: 13px; color: #888;">支持选择多张图片连续查看</p>
+            <p style="color: #ccc; margin-bottom: 20px;">点击"打开图片"选择全景相册</p>
+            <p style="font-size: 13px; color: #888;">支持多选图片，可连续浏览</p>
         `;
         document.body.appendChild(welcomeMsg);
 
