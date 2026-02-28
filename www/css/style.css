@@ -31,6 +31,17 @@ html, body {
     backdrop-filter: blur(10px);
     z-index: 1000;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* 隐藏工具栏滚动条 */
+.toolbar::-webkit-scrollbar {
+    display: none;
+}
+.toolbar {
+    scrollbar-width: none;
 }
 
 .tool-btn {

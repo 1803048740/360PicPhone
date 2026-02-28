@@ -8,7 +8,11 @@ class PanoramaViewer {
 
         // 图片列表相关
         this.images = [];           // 图片数据URL列表
+        this.imageMetadata = [];    // 图片元数据（位置信息等）
         this.currentImageIndex = 0; // 当前图片索引
+
+        // Capacitor 插件
+        this.Filesystem = null;     // Filesystem 插件
 
         // 统一的视角状态（弧度）
         this.viewState = {
@@ -108,7 +112,7 @@ class PanoramaViewer {
     }
 
     setupElements() {
-        this.btnOpen = document.getElementById('btnOpen');
+        this.btnOpenFolder = document.getElementById('btnOpenFolder');
         this.btnAddMore = document.getElementById('btnAddMore');
         this.btnGyroscope = document.getElementById('btnGyroscope');
         this.btnFullscreen = document.getElementById('btnFullscreen');
@@ -116,6 +120,7 @@ class PanoramaViewer {
         this.btnSettings = document.getElementById('btnSettings');
         this.btnRecalibrate = document.getElementById('btnRecalibrate');
         this.fileInput = document.getElementById('fileInput');
+        this.folderInput = document.getElementById('folderInput');
         this.loading = document.getElementById('loading');
         this.infoPanel = document.getElementById('infoPanel');
         this.settingsPanel = document.getElementById('settingsPanel');
@@ -150,9 +155,10 @@ class PanoramaViewer {
     }
 
     setupEventListeners() {
-        this.btnOpen.addEventListener('click', () => this.openNewImages());
+        this.btnOpenFolder.addEventListener('click', () => this.openFolder());
         this.btnAddMore.addEventListener('click', () => this.addMoreImages());
         this.fileInput.addEventListener('change', (e) => this.handleFileSelect(e));
+        this.folderInput.addEventListener('change', (e) => this.handleFolderSelect(e));
         this.btnGyroscope.addEventListener('click', () => this.toggleGyroscope());
         this.btnRecalibrate.addEventListener('click', () => this.recalibrateGyroscope());
         this.btnFullscreen.addEventListener('click', () => this.toggleFullscreen());
@@ -452,7 +458,166 @@ class PanoramaViewer {
 
     // ========== 图片导航功能 ==========
 
-    // 打开新图片（替换当前列表）
+    // 打开文件夹
+    async openFolder() {
+        // 检查是否在 Capacitor 环境中
+        if (window.Capacitor && Capacitor.Pl && Capacitor.Pl.Filesystem) {
+            // 使用 Capacitor Filesystem API
+            await this.openFolderCapacitor();
+        } else {
+            // Web 环境使用 webkitdirectory
+            this.folderInput.click();
+        }
+    }
+
+    // 使用 Capacitor 打开文件夹（Android）
+    async openFolderCapacitor() {
+        try {
+            // Android 需要使用 Storage Access Framework
+            // 这里使用一个变通方案：提示用户使用文件选择器
+            this.showToast('请在文件选择器中选择文件夹');
+            this.folderInput.click();
+        } catch (error) {
+            console.error('打开文件夹失败:', error);
+            // 回退到普通文件选择
+            this.fileInput.click();
+        }
+    }
+
+    // 处理文件夹选择
+    handleFolderSelect(event) {
+        const files = Array.from(event.target.files);
+        if (files.length === 0) return;
+
+        // 重置 input
+        this.folderInput.value = '';
+
+        // 过滤图片文件
+        const imageFiles = files.filter(f => f.type.startsWith('image/'));
+        if (imageFiles.length === 0) {
+            alert('所选文件夹中没有图片文件');
+            return;
+        }
+
+        // 按文件名排序
+        imageFiles.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+
+        // 提取元数据并加载图片
+        this.loadImagesWithMetadata(imageFiles);
+    }
+
+    // 加载图片并提取元数据
+    loadImagesWithMetadata(files) {
+        this.showLoading();
+        this.images = [];
+        this.imageMetadata = [];
+        let loadedCount = 0;
+
+        files.forEach((file, index) => {
+            // 读取文件
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                this.images[index] = e.target.result;
+
+                // 提取 EXIF 信息
+                this.extractMetadata(file, index);
+
+                loadedCount++;
+
+                // 所有图片加载完成
+                if (loadedCount === files.length) {
+                    this.currentImageIndex = 0;
+                    this.loadImageByIndex(0);
+                    this.updateImageNav();
+                    this.updateToolbarButtons();
+                    this.hideLoading();
+                    this.showToast(`已加载 ${files.length} 张图片`);
+                }
+            };
+            reader.onerror = () => {
+                console.error('文件读取失败:', file.name);
+                loadedCount++;
+                if (loadedCount === files.length) {
+                    if (this.images.length > 0) {
+                        this.currentImageIndex = 0;
+                        this.loadImageByIndex(0);
+                        this.updateImageNav();
+                        this.updateToolbarButtons();
+                    }
+                    this.hideLoading();
+                }
+            };
+            reader.readAsDataURL(file);
+        });
+    }
+
+    // 提取文件元数据
+    extractMetadata(file, index) {
+        const metadata = {
+            name: file.name,
+            size: file.size,
+            lastModified: new Date(file.lastModified),
+            type: file.type
+        };
+
+        // 尝试读取 EXIF 信息
+        this.readExifData(file, index);
+        this.imageMetadata[index] = metadata;
+    }
+
+    // 读取 EXIF 数据（包括 GPS 位置）
+    readExifData(file, index) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const view = new DataView(e.target.result);
+
+            // 检查是否为 JPEG 格式
+            if (view.getUint16(0, false) !== 0xFFD8) return;
+
+            let length = view.byteLength;
+            let offset = 2;
+
+            while (offset < length) {
+                const marker = view.getUint16(offset, false);
+                offset += 2;
+
+                if (marker === 0xFFE1) { // APP1 marker (EXIF)
+                    if (view.getUint32(offset + 2, false) !== 0x45786966) return;
+
+                    const littleEndian = view.getUint16(offset + 10, false) === 0x4949;
+                    const tiffOffset = offset + 10;
+                    const firstIFDOffset = view.getUint32(tiffOffset + 4, littleEndian);
+
+                    // 读取 GPS 信息
+                    this.readGpsInfo(view, tiffOffset, firstIFDOffset, littleEndian);
+                    break;
+                } else if ((marker & 0xFF00) !== 0xFF00) {
+                    break;
+                }
+            }
+        };
+        reader.readAsArrayBuffer(file.slice(0, 65536)); // 只读取前 64KB
+    }
+
+    // 读取 GPS 信息
+    readGpsInfo(view, tiffOffset, ifdOffset, littleEndian) {
+        // 简化版本 - 实际项目中可以使用 exif-js 库
+        const numEntries = view.getUint16(ifdOffset, littleEndian);
+
+        for (let i = 0; i < numEntries; i++) {
+            const entryOffset = ifdOffset + 2 + i * 12;
+            const tag = view.getUint16(entryOffset, littleEndian);
+
+            if (tag === 0x8825) { // GPS IFD pointer
+                const gpsOffset = tiffOffset + view.getUint32(entryOffset + 8, littleEndian);
+                // 这里可以解析 GPS 坐标
+                console.log('找到 GPS 信息');
+                break;
+            }
+        }
+    }
+
+    // 打开新图片（替换当前列表） - 已弃用，保留兼容
     openNewImages() {
         this.isAddingMore = false;
         this.fileInput.click();
@@ -570,10 +735,10 @@ class PanoramaViewer {
     updateToolbarButtons() {
         if (this.images.length > 0) {
             this.btnAddMore.classList.remove('hidden');
-            this.btnOpen.classList.add('hidden');
+            this.btnOpenFolder.classList.add('hidden');
         } else {
             this.btnAddMore.classList.add('hidden');
-            this.btnOpen.classList.remove('hidden');
+            this.btnOpenFolder.classList.remove('hidden');
         }
     }
 
@@ -723,8 +888,8 @@ class PanoramaViewer {
         welcomeMsg.innerHTML = `
             <div style="font-size: 48px; margin-bottom: 15px;">🌐</div>
             <h2 style="margin: 0 0 15px 0;">360° 全景查看器</h2>
-            <p style="color: #ccc; margin-bottom: 20px;">点击"打开图片"选择全景相册</p>
-            <p style="font-size: 13px; color: #888;">支持多选图片，可连续浏览</p>
+            <p style="color: #ccc; margin-bottom: 20px;">点击"选择文件夹"打开全景相册</p>
+            <p style="font-size: 13px; color: #888;">自动读取文件夹中所有全景图片</p>
         `;
         document.body.appendChild(welcomeMsg);
 
