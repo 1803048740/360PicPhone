@@ -6,6 +6,10 @@ class PanoramaViewer {
         this.sphere = null;
         this.texture = null;
 
+        // 图片列表相关
+        this.images = [];           // 图片数据URL列表
+        this.currentImageIndex = 0; // 当前图片索引
+
         // 统一的视角状态（弧度）
         this.viewState = {
             yaw: 0,      // 水平方向，左右看
@@ -25,6 +29,10 @@ class PanoramaViewer {
         this.previousTouch = { x: 0, y: 0 };
         this.gyroscopeEnabled = false;
         this.orientationHandler = null;
+
+        // 左右滑动手势
+        this.swipeStartX = 0;
+        this.swipeStartTime = 0;
 
         // 陀螺仪校准数据
         this.gyroCalibration = {
@@ -113,6 +121,12 @@ class PanoramaViewer {
         this.btnCloseInfo = document.getElementById('btnCloseInfo');
         this.btnCloseSettings = document.getElementById('btnCloseSettings');
 
+        // 图片导航控件
+        this.imageNav = document.getElementById('imageNav');
+        this.imageCounter = document.getElementById('imageCounter');
+        this.btnPrev = document.getElementById('btnPrev');
+        this.btnNext = document.getElementById('btnNext');
+
         // 设置控件
         this.inputDragSensitivity = document.getElementById('inputDragSensitivity');
         this.inputGyroSensitivity = document.getElementById('inputGyroSensitivity');
@@ -150,6 +164,10 @@ class PanoramaViewer {
         this.settingsPanel.addEventListener('click', (e) => {
             if (e.target === this.settingsPanel) this.hideSettings();
         });
+
+        // 图片导航
+        this.btnPrev.addEventListener('click', () => this.prevImage());
+        this.btnNext.addEventListener('click', () => this.nextImage());
 
         // 设置滑块事件
         this.inputDragSensitivity.addEventListener('input', (e) => {
@@ -269,6 +287,8 @@ class PanoramaViewer {
         const onPointerDown = (x, y) => {
             this.isDragging = true;
             this.previousTouch = { x, y };
+            this.swipeStartX = x;
+            this.swipeStartTime = Date.now();
         };
 
         // 鼠标/触摸移动 - VR风格：直接改变视角
@@ -295,15 +315,32 @@ class PanoramaViewer {
         };
 
         // 鼠标/触摸结束
-        const onPointerUp = () => {
+        const onPointerUp = (x) => {
             this.isDragging = false;
+
+            // 检测滑动手势（水平切换图片）
+            const swipeDistance = x - this.swipeStartX;
+            const swipeDuration = Date.now() - this.swipeStartTime;
+
+            // 滑动距离超过100px且时间短于300ms，认为是切换图片手势
+            if (Math.abs(swipeDistance) > 100 && swipeDuration < 300) {
+                if (swipeDistance > 0) {
+                    // 向右滑动 → 上一张
+                    this.prevImage();
+                } else {
+                    // 向左滑动 → 下一张
+                    this.nextImage();
+                }
+            }
         };
 
         // 鼠标事件
         canvas.addEventListener('mousedown', (e) => onPointerDown(e.clientX, e.clientY));
         canvas.addEventListener('mousemove', (e) => onPointerMove(e.clientX, e.clientY));
-        canvas.addEventListener('mouseup', onPointerUp);
-        canvas.addEventListener('mouseleave', onPointerUp);
+        canvas.addEventListener('mouseup', (e) => onPointerUp(e.clientX));
+        canvas.addEventListener('mouseleave', () => {
+            this.isDragging = false;
+        });
 
         // 触摸事件
         canvas.addEventListener('touchstart', (e) => {
@@ -319,7 +356,11 @@ class PanoramaViewer {
             }
         }, { passive: false });
 
-        canvas.addEventListener('touchend', onPointerUp);
+        canvas.addEventListener('touchend', (e) => {
+            if (e.changedTouches.length > 0) {
+                onPointerUp(e.changedTouches[0].clientX);
+            }
+        });
 
         // 双指缩放
         let initialPinchDistance = 0;
@@ -406,6 +447,101 @@ class PanoramaViewer {
             this.loading.classList.add('hidden');
         }
     }
+
+    // ========== 图片导航功能 ==========
+
+    // 处理文件选择（支持多选）
+    handleFileSelect(event) {
+        const files = Array.from(event.target.files);
+        if (files.length === 0) return;
+
+        // 验证文件类型
+        const validFiles = files.filter(f => f.type.startsWith('image/'));
+        if (validFiles.length === 0) {
+            alert('请选择图片文件');
+            return;
+        }
+
+        // 读取所有图片
+        this.images = [];
+        let loadedCount = 0;
+
+        validFiles.forEach((file, index) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                this.images[index] = e.target.result;
+                loadedCount++;
+
+                // 所有图片加载完成后，显示第一张
+                if (loadedCount === validFiles.length) {
+                    this.currentImageIndex = 0;
+                    this.loadImageByIndex(0);
+                    this.updateImageNav();
+                }
+            };
+            reader.onerror = () => {
+                console.error('文件读取失败:', file.name);
+                loadedCount++;
+                if (loadedCount === validFiles.length) {
+                    if (this.images.length > 0) {
+                        this.currentImageIndex = 0;
+                        this.loadImageByIndex(0);
+                        this.updateImageNav();
+                    }
+                }
+            };
+            reader.readAsDataURL(file);
+        });
+    }
+
+    // 按索引加载图片
+    loadImageByIndex(index) {
+        if (index < 0 || index >= this.images.length) return;
+
+        this.currentImageIndex = index;
+        this.loadPanorama(this.images[index]);
+        this.updateImageNav();
+    }
+
+    // 上一张图片
+    prevImage() {
+        if (this.images.length <= 1) return;
+        const newIndex = this.currentImageIndex - 1;
+        if (newIndex < 0) {
+            // 循环到最后一张
+            this.loadImageByIndex(this.images.length - 1);
+        } else {
+            this.loadImageByIndex(newIndex);
+        }
+    }
+
+    // 下一张图片
+    nextImage() {
+        if (this.images.length <= 1) return;
+        const newIndex = this.currentImageIndex + 1;
+        if (newIndex >= this.images.length) {
+            // 循环到第一张
+            this.loadImageByIndex(0);
+        } else {
+            this.loadImageByIndex(newIndex);
+        }
+    }
+
+    // 更新图片导航UI
+    updateImageNav() {
+        if (this.images.length > 1) {
+            this.imageNav.classList.remove('hidden');
+            this.imageCounter.textContent = `${this.currentImageIndex + 1} / ${this.images.length}`;
+
+            // 更新按钮状态
+            this.btnPrev.disabled = false;
+            this.btnNext.disabled = false;
+        } else {
+            this.imageNav.classList.add('hidden');
+        }
+    }
+
+    // ========== 全景图加载 ==========
 
     loadPanorama(imagePath) {
         console.log('开始加载全景图...');
@@ -502,32 +638,13 @@ class PanoramaViewer {
             <div style="font-size: 48px; margin-bottom: 15px;">🌐</div>
             <h2 style="margin: 0 0 15px 0;">360° 全景查看器</h2>
             <p style="color: #ccc; margin-bottom: 20px;">点击"打开图片"加载全景图</p>
-            <p style="font-size: 13px; color: #888;">支持任意比例的全景图片</p>
+            <p style="font-size: 13px; color: #888;">支持选择多张图片连续查看</p>
         `;
         document.body.appendChild(welcomeMsg);
 
         document.getElementById('panorama').style.cssText = `
             background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
         `;
-    }
-
-    handleFileSelect(event) {
-        const file = event.target.files[0];
-        if (!file) return;
-
-        if (!file.type.startsWith('image/')) {
-            alert('请选择图片文件');
-            return;
-        }
-
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            this.loadPanorama(e.target.result);
-        };
-        reader.onerror = () => {
-            alert('文件读取失败');
-        };
-        reader.readAsDataURL(file);
     }
 
     // ========== 陀螺仪控制 ==========

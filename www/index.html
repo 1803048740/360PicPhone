@@ -65,8 +65,23 @@
             <p>加载中...</p>
         </div>
 
-        <!-- 文件选择器 -->
-        <input type="file" id="fileInput" accept="image/*" style="display: none;">
+        <!-- 文件选择器 - 支持多选 -->
+        <input type="file" id="fileInput" accept="image/*" multiple style="display: none;">
+
+        <!-- 图片导航控制 -->
+        <div id="imageNav" class="image-nav hidden">
+            <button id="btnPrev" class="nav-btn prev-btn">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="15 18 9 12 15 6"></polyline>
+                </svg>
+            </button>
+            <div id="imageCounter" class="image-counter">1 / 1</div>
+            <button id="btnNext" class="nav-btn next-btn">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="9 18 15 12 9 6"></polyline>
+                </svg>
+            </button>
+        </div>
 
         <!-- 信息面板 -->
         <div id="infoPanel" class="info-panel hidden">
